@@ -1,0 +1,11 @@
+# Python environment
+venv/
+__pycache__/
+*.pyc
+
+# Secrets and Config
+.env
+
+# Data
+*.json
+*.csv
