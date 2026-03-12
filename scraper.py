@@ -59,7 +59,7 @@ def scrape_comments():
             
             remaining = config['target_count'] - len(all_results)
             all_results.extend(filtered_batch[:remaining])
-            current_before = data[-1]['created_utc'] - 1
+            current_before = int(data[-1]['created_utc']) - 1
             print(f"Collected {len(all_results)} comments... (Last date: {datetime.fromtimestamp(current_before)})")
             if len(data) < 10:
                 time.sleep(0.1)
