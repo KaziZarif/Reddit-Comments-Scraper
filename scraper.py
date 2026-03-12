@@ -51,13 +51,14 @@ def scrape_comments():
                     "body": c['body'],
                     "post_id": c['link_id'],
                     "subreddit": c['subreddit'],
-                    "permalink": f"https://reddit.com{c['permalink']}"
+                    "permalink": f"https://reddit.com{c.get('permalink', '')}"
                 }
                 for c in data
                 if c['subreddit'].lower() not in BLACKLIST
             ]
             
-            all_results.extend(filtered_batch)
+            remaining = config['target_count'] - len(all_results)
+            all_results.extend(filtered_batch[:remaining])
             current_before = data[-1]['created_utc'] - 1
             print(f"Collected {len(all_results)} comments... (Last date: {datetime.fromtimestamp(current_before)})")
             if len(data) < 10:
