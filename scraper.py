@@ -58,9 +58,12 @@ def scrape_comments():
             ]
             
             all_results.extend(filtered_batch)
-            current_before = data[-1]['created_utc']
+            current_before = data[-1]['created_utc'] - 1
             print(f"Collected {len(all_results)} comments... (Last date: {datetime.fromtimestamp(current_before)})")
-            time.sleep(1)
+            if len(data) < 10:
+                time.sleep(0.1)
+            else:
+                time.sleep(1)
         
         except Exception as e:
             print(f"Connection error: {e}. Sleeping 10s...")
