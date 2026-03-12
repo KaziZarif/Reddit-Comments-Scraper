@@ -45,25 +45,52 @@ def scrape_comments():
                 break
             
             filtered_batch = [
-                c for c in data
+                {
+                    "comment_id": c['id'],
+                    "body": c['body'],
+                    "post_id": c['link_id'],
+                    "subreddit": c['subreddit']
+                }
+                for c in data
                 if c['subreddit'].lower() not in BLACKLIST
             ]
-
+            
             all_results.extend(filtered_batch)
-
             current_before = data[-1]['created_utc']
-
             print(f"Collected {len(all_results)} comments... (Last date: {datetime.fromtimestamp(current_before)})")
-
             time.sleep(1)
         
         except Exception as e:
             print(f"Connection error: {e}. Sleeping 10s...")
             time.sleep(10)
 
+    unique_post_ids = list(set([c['post_id'] for c in all_results]))
+    title_map =  {}
+    for i in range(0, len(unique_post_ids), 100):
+        batch = unique_post_ids[i: i + 100]
+        titles = fetch_post_titles(batch)
+        title_map.update(titles)
+
+    for comment in all_results:
+        short_id = comment['post_id'].replace("t3_", "")
+        comment['post_title'] = title_map.get(short_id, "Title Not Found")
+
     with open("raw_comments.json", "w") as f:
         json.dump(all_results, f, indent=4)
     print(f"Data saved to raw_comments.json")
+
+def fetch_post_titles(post_ids):
+    short_ids = ",".join([pid.replace("t3_", "") for pid in post_ids])
+    url = f"https://api.pullpush.io/reddit/search/submission/?ids={short_ids}"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            submissions = response.json().get('data', [])
+            return {s['id']: s['title'] for s in submissions}
+    except Exception as e:
+        print(f"Failed to fetch titles: {e}")
+    return {}
 
 if __name__ == "__main__":
     scrape_comments()
