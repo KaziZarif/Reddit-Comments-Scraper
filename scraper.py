@@ -3,6 +3,7 @@ import time
 import json
 import os
 import sys
+import re
 from datetime import datetime 
 
 def load_config():
@@ -49,7 +50,8 @@ def scrape_comments():
                     "comment_id": c['id'],
                     "body": c['body'],
                     "post_id": c['link_id'],
-                    "subreddit": c['subreddit']
+                    "subreddit": c['subreddit'],
+                    "permalink": f"https://reddit.com{c['permalink']}"
                 }
                 for c in data
                 if c['subreddit'].lower() not in BLACKLIST
@@ -73,11 +75,25 @@ def scrape_comments():
 
     for comment in all_results:
         short_id = comment['post_id'].replace("t3_", "")
-        comment['post_title'] = title_map.get(short_id, "Title Not Found")
+        title = title_map.get(short_id, "Title Not Found")
+
+        if not title or title == "Title Not Found":
+            comment['post_title'] = extract_title_from_permalink(comment['permalink'])
+        else:
+            comment['post_title'] = title
+
 
     with open("raw_comments.json", "w") as f:
         json.dump(all_results, f, indent=4)
     print(f"Data saved to raw_comments.json")
+
+
+def extract_title_from_permalink(permalink):
+    match = re.search(r'/comments/[^/]+/([^/]+)/', permalink)
+    if match:
+        clean_title = match.group(1).replace('_', ' ').replace('-', ' ')
+        return clean_title
+    return "Title Not Found"
 
 def fetch_post_titles(post_ids):
     short_ids = ",".join([pid.replace("t3_", "") for pid in post_ids])
@@ -85,9 +101,23 @@ def fetch_post_titles(post_ids):
     
     try:
         response = requests.get(url, timeout=10)
+        title_map = {}
+        
         if response.status_code == 200:
             submissions = response.json().get('data', [])
-            return {s['id']: s['title'] for s in submissions}
+            title_map = {s['id']: s['title'] for s in submissions}
+        
+        for pid in post_ids:
+            sid = pid.replace("t3_", "")
+            if sid not in title_map:
+                fallback_url = f"https://api.pullpush.io/reddit/search/submission/?q={sid}"
+                fallback_response = requests.get(fallback_url, timeout=5)
+                if fallback_response.status_code == 200:
+                    fallback_data = fallback_response.json().get('data', [])
+                    if fallback_data:
+                        title_map[sid] = fallback_data[0]['title']
+
+        return title_map
     except Exception as e:
         print(f"Failed to fetch titles: {e}")
     return {}
