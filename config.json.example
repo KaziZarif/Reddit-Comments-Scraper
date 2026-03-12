@@ -1,0 +1,5 @@
+{
+    "search_phrase": "example",
+    "target_count": 5000,
+    "blacklist": ["test", "funny", "example_sub"]
+}
