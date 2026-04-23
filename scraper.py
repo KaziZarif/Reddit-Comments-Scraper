@@ -15,63 +15,81 @@ def load_config():
         return json.load(f)
     
 config = load_config()
-SEARCH_PHRASE = config['search_phrase']
-BLACKLIST = config['blacklist']
+SEARCH_PHRASES = config.get('search_phrases', [config.get('search_phrase')])
+BLACKLIST = config.get('blacklist', [])
 
 def scrape_comments():
     url = "https://api.pullpush.io/reddit/search/comment/"
     all_results = []
-    current_before = int(time.time())
+    existing_ids = set()
+    # current_before = int(time.time())
 
-    print(f"Starting scraper....")
+    cursors = {phrase: int(time.time()) for phrase in SEARCH_PHRASES}
 
+    print(f"Starting Search...")
+
+    # phrases = config.get('search_phrases', [config.get('search_phrase')])
     while len(all_results) < config['target_count']:
-        params = {
-            'q': SEARCH_PHRASE,
-            'size': 100,
-            'before': current_before,
-            'sort': 'desc'
-        }
-    
-        try:
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code != 200:
-                print(f"API Error: {response.status_code}. Retrying in 5s...")
-                time.sleep(5)
-                continue
+        pot = []
+        found_this_round = False 
 
-            data = response.json().get('data', [])
-            if not data:
-                print("No more results found.")
-                break
-            
-            filtered_batch = [
-                {
-                    "comment_id": c['id'],
-                    "body": c['body'],
-                    "post_id": c['link_id'],
-                    "subreddit": c['subreddit'],
-                    "permalink": f"https://reddit.com{c.get('permalink', '')}"
-                }
-                for c in data
-                if c['subreddit'].lower() not in BLACKLIST
-            ]
-            
-            remaining = config['target_count'] - len(all_results)
-            all_results.extend(filtered_batch[:remaining])
-            current_before = int(data[-1]['created_utc']) - 1
-            print(f"Collected {len(all_results)} comments... (Last date: {datetime.fromtimestamp(current_before)})")
-            if len(data) < 10:
-                time.sleep(0.1)
-            else:
-                time.sleep(1)
+        for phrase in SEARCH_PHRASES:
+            params = {
+                'q': phrase,
+                'size': 50,
+                'before': cursors[phrase],
+                'sort': 'desc'
+            }
         
-        except Exception as e:
-            print(f"Connection error: {e}. Sleeping 10s...")
-            time.sleep(10)
+            try:
+                response = requests.get(url, params=params, timeout=10)
+                if response.status_code != 200:
+                    continue
 
+                data = response.json().get('data', [])
+                if not data:
+                    continue
+
+                found_this_round = True 
+                cursors[phrase] = int(data[-1]['created_utc']) -1
+
+                for c in data:
+                    if c['subreddit'].lower() not in BLACKLIST:
+                        pot.append(c)
+
+            except Exception as e:
+                print(f"Error fetching phrase '{phrase}': {e}")
+
+        if not found_this_round:
+            print("No more results found for any search phrase.")
+            break
+
+        pot.sort(key=lambda x: int(x['created_utc']), reverse=True)
+
+        for c in pot:
+            if c['id'] not in existing_ids:
+                if len(all_results) < config['target_count']:
+                    all_results.append({
+                        "comment_id": c['id'],
+                        "body": c['body'],
+                        "post_id": c['link_id'],
+                        "subreddit": c['subreddit'],
+                        "created_utc": int(c['created_utc']),
+                        "permalink": f"https://reddit.com{c.get('permalink', '')}"
+                    })
+                    existing_ids.add(c['id'])
+                else:
+                    break
+        
+        last_date = datetime.fromtimestamp(all_results[-1]['created_utc'])
+        print(f"Collected {len(all_results)} total... (Current date: {last_date})")
+
+        time.sleep(1)
+
+    
+    print("Fetching post titles...")
     unique_post_ids = list(set([c['post_id'] for c in all_results]))
-    title_map =  {}
+    title_map = {}
     for i in range(0, len(unique_post_ids), 100):
         batch = unique_post_ids[i: i + 100]
         titles = fetch_post_titles(batch)
@@ -79,16 +97,14 @@ def scrape_comments():
 
     for comment in all_results:
         short_id = comment['post_id'].replace("t3_", "")
-        title = title_map.get(short_id, "Title Not Found")
-
+        title = title_map.get(short_id)
         if not title or title == "Title Not Found":
             comment['post_title'] = extract_title_from_permalink(comment['permalink'])
         else:
-            comment['post_title'] = title
-
-
-    with open("raw_comments.json", "w") as f:
-        json.dump(all_results, f, indent=4)
+            comment['post_title'] = title 
+    
+    with open("raw_comments.json", "w", encoding='utf-8') as f:
+        json.dump(all_results, f, indent=4, ensure_ascii=False)
     print(f"Data saved to raw_comments.json")
 
 
