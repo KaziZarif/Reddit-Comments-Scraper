@@ -1,5 +1,5 @@
 {
-    "search_phrase": "example",
+    "search_phrases": "example",
     "target_count": 5000,
     "blacklist": ["test", "funny", "example_sub"]
 }
